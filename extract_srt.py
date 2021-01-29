@@ -8,6 +8,11 @@ import json
 import argparse
 from collections import namedtuple
 from pprint import pprint
+try:
+    from tqdm import tqdm
+    tqdm_installed = True
+except:
+    tqdm_installed = False
 
 class SubPart:
 
@@ -32,7 +37,7 @@ class SubPart:
 """[1:-1]
 
 
-def gen_subparts(input_file, model_dir, verbose=False, partlen=4):
+def gen_subparts(input_file, model_dir, verbose=False, partlen=4, progress=False):
     SetLogLevel(0 if verbose else -1)
 
     model = Model(model_dir)
@@ -42,6 +47,12 @@ def gen_subparts(input_file, model_dir, verbose=False, partlen=4):
                                 input_file,
                                 '-ar', str(16000) , '-ac', '1', '-f', 's16le', '-'],
                                 stdout=subprocess.PIPE)
+
+    r = subprocess.run("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1".split() + [input_file], stdout=subprocess.PIPE)
+    duration = float(r.stdout.decode('utf-8').strip())
+
+    if progress:
+        pbar = tqdm(total=duration, unit="s")
 
     prev_end = 0
     while True:
@@ -67,6 +78,8 @@ def gen_subparts(input_file, model_dir, verbose=False, partlen=4):
                         resultpart = []
                     else:
                         resultpart.append(result)
+                    if progress:
+                        pbar.update(float(result['end'] - pbar.n))
 
 
                 if len(resultpart) > 0:
@@ -80,10 +93,10 @@ def gen_subparts(input_file, model_dir, verbose=False, partlen=4):
             pass
             #print(rec.PartialResult())
     #pprint(rec.PartialResult())
+    if progress:
+        pbar.close()
     r = json.loads(rec.PartialResult())
     text = r['partial']
-    r = subprocess.run("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1".split() + [input_file], stdout=subprocess.PIPE)
-    duration = float(r.stdout.decode('utf-8').strip())
     yield SubPart(start=prev_end, end=duration, text=text)
 
 
@@ -93,13 +106,16 @@ def create_parser():
     parser.add_argument("-o", "--output", type=argparse.FileType('w+'), default=sys.stdout)
     parser.add_argument("-m", "--model", required=True)
     parser.add_argument("-i", "--interval", default=4)
+    if tqdm_installed:
+        parser.add_argument("-p", "--progress", action="store_true")
     parser.add_argument("input")
     return parser
 
 
 def main():
     args = create_parser().parse_args()
-    for i,subpart in enumerate(gen_subparts(args.input, args.model, args.verbose, args.interval)):
+    it = enumerate(gen_subparts(args.input, args.model, args.verbose, args.interval, args.progress))
+    for i,subpart in it:
         n = i+1
         args.output.write(f"""{n}
 {subpart}
