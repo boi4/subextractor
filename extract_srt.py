@@ -114,7 +114,10 @@ def create_parser():
 
 def main():
     args = create_parser().parse_args()
-    it = enumerate(gen_subparts(args.input, args.model, args.verbose, args.interval, args.progress))
+    if tqdm_installed:
+        it = enumerate(gen_subparts(args.input, args.model, args.verbose, args.interval, args.progress))
+    else:
+        it = enumerate(gen_subparts(args.input, args.model, args.verbose, args.interval, False))
     for i,subpart in it:
         n = i+1
         args.output.write(f"""{n}
